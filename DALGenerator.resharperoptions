@@ -1,0 +1,13 @@
+<Configuration>
+  <CompletionStatisticsManager />
+  <SettingsComponent>
+    <string />
+    <integer />
+    <boolean />
+  </SettingsComponent>
+  <RecentFilesTracker>
+    <RecentFilesTracker>
+      <TrackedFile location="D:\Projects\DALGenerator\Base Classes\clsColumn.vb" offset="5464" line="141" column="0" />
+    </RecentFilesTracker>
+  </RecentFilesTracker>
+</Configuration>

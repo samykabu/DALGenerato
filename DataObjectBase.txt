@@ -1,0 +1,319 @@
+Imports System.Data.SqlClient
+Public MustInherit Class DataObjectBase
+    Implements IDisposable
+
+    Public Enum TransactionType
+        NoTransaction = 0
+        RequireTransaction = 1
+    End Enum
+    Private InternalSqlStr As String = "Select * from "
+    Protected oSqlConnection As SqlConnection
+    Protected oTransactionType As TransactionType = TransactionType.NoTransaction
+    Protected oCurrentTransaction As SqlTransaction
+    Protected bIsLocalConenction As Boolean = False
+
+    Public Sub SetParent(ByVal dat As DataObjectBase)
+        oSqlConnection = dat.oSqlConnection
+        oCurrentTransaction = dat.oCurrentTransaction
+    End Sub
+    Public Sub Commit()
+        If Not oCurrentTransaction Is Nothing Then
+            oCurrentTransaction.Commit()
+            oCurrentTransaction.Dispose()
+            oCurrentTransaction = Nothing
+            oSqlConnection.Close()
+            oSqlConnection.Dispose()
+        Else
+            Throw New Exception("No Transaction to commit")
+        End If
+    End Sub
+    Public Sub RollBack()
+        If Not oCurrentTransaction Is Nothing Then
+            oCurrentTransaction.Rollback()
+            oCurrentTransaction.Dispose()
+            oCurrentTransaction = Nothing
+            oSqlConnection.Close()
+            oSqlConnection.Dispose()
+        Else
+            Throw New Exception("No Transaction to RollBack")
+        End If
+    End Sub
+    Public MustOverride ReadOnly Property TableName() As String
+
+
+    Public Property TransactionMode() As TransactionType
+        Get
+            Return oTransactionType
+        End Get
+        Set(ByVal Value As TransactionType)
+            oTransactionType = Value
+        End Set
+    End Property
+
+    Public Sub RunSqlSt(ByVal SqlStr As String, ByRef DataReader As SqlDataReader)
+        Dim cmd As SqlCommand
+        Try
+            cmd = CreateCommand(SqlStr)
+            DataReader = cmd.ExecuteReader(CommandBehavior.Default)
+        Catch ex As Exception
+            DataReader = Nothing
+            if not cmd is nothing then cmd.Dispose()
+            Throw New Exception("Data Command " + SqlStr + " failed ->" + ex.Message)
+        End Try
+        cmd.Dispose()
+        cmd = Nothing
+    End Sub
+    Public Sub RunSqlSt(ByVal SqlStr As String, ByRef Dataset As DataSet)
+        Dim cmd As SqlCommand
+        Dim Sqladp As SqlDataAdapter
+        Try
+            cmd = CreateCommand(SqlStr)
+            Sqladp = New SqlDataAdapter(cmd)
+            Sqladp.Fill(Dataset)
+        Catch ex As Exception
+            Throw New Exception("Data Command " + SqlStr + " failed ->" + ex.Message)
+        End Try
+        cmd.Dispose()
+        cmd = Nothing
+        Sqladp.Dispose()
+        Sqladp = Nothing
+    End Sub
+    Protected Function RunProcedure(ByVal ProcName As String) As Int64
+        Dim result As Int64
+        Dim cmd As SqlCommand
+        Try
+            cmd = CreateCommand(ProcName, Nothing)
+            result = CType(cmd.ExecuteScalar(), Int64)
+        Catch ex As Exception
+            if not cmd is nothing then cmd.Dispose()
+            Throw New Exception("Data Command " + ProcName + " failed ->" + ex.Message)
+        End Try
+        cmd.Dispose()
+        cmd = Nothing
+        Return result
+    End Function
+    Protected Function RunProcedure(ByVal ProcName As String, ByVal Params As SqlParameter()) As Object
+        Dim result As Object
+        Dim cmd As SqlCommand
+
+        Try
+            cmd = CreateCommand(ProcName, Params)
+            result = cmd.ExecuteScalar
+        Catch ex As Exception
+            if not cmd is nothing then cmd.Dispose()
+            Throw New Exception("Data Command " + ProcName + " failed ->" + ex.Message)
+        End Try
+        cmd.Dispose()
+        cmd = Nothing
+        Return result
+    End Function
+    Protected Sub RunProcedure(ByVal ProcName As String, ByRef Datareader As SqlDataReader)
+        Dim cmd As SqlCommand
+        Try
+            cmd = CreateCommand(ProcName, Nothing)
+            Datareader = cmd.ExecuteReader(CommandBehavior.Default)
+        Catch ex As Exception
+            Datareader = Nothing
+            if not cmd is nothing then cmd.Dispose()
+            Throw New Exception("Data Command " + ProcName + " failed ->" + ex.Message)
+        End Try
+        cmd.Dispose()
+        cmd = Nothing
+    End Sub
+    Protected Sub RunProcedure(ByVal ProcName As String, ByVal Params As SqlParameter(), ByRef Datareader As SqlDataReader)
+        Dim cmd As SqlCommand
+        Try
+            cmd = CreateCommand(ProcName, Params)
+            Datareader = cmd.ExecuteReader(CommandBehavior.Default)
+        Catch ex As Exception
+            Datareader = Nothing
+            if not cmd is nothing then cmd.Dispose()
+            cmd = Nothing
+            Throw New Exception("Data Command " + ProcName + " failed ->" + ex.Message)
+        End Try
+        cmd.Dispose()
+        cmd = Nothing
+    End Sub
+    Protected Sub RunProcedure(ByVal ProcName As String, ByVal Params As SqlParameter(), ByRef DataSet As DataSet)
+        Dim cmd As SqlCommand
+        Dim SqlAdb As SqlDataAdapter
+        Try
+            cmd = CreateCommand(ProcName, Params)
+            SqlAdb = New SqlDataAdapter(cmd)
+            SqlAdb.Fill(DataSet)
+        Catch ex As Exception
+            if not cmd is nothing then cmd.Dispose()
+            if not sqladb is nothing then SqlAdb.Dispose()
+            cmd = Nothing
+            SqlAdb = Nothing
+            Throw New Exception("Data Command " + ProcName + " failed ->" + ex.Message)
+        End Try
+    End Sub
+    Protected Sub RunProcedure(ByVal ProcName As String, ByRef DataSet As DataSet)
+        Dim cmd As SqlCommand
+        Dim SqlAdb As SqlDataAdapter
+        Try
+            cmd = CreateCommand(ProcName, Nothing)
+            SqlAdb = New SqlDataAdapter(cmd)
+            SqlAdb.Fill(DataSet)
+        Catch ex As Exception
+            if not cmd is nothing then cmd.Dispose()
+            if not sqladb is nothing then SqlAdb.Dispose()
+            cmd = Nothing
+            SqlAdb = Nothing
+            Throw New Exception("Data Command " + ProcName + " failed ->" + ex.Message)
+        End Try
+    End Sub
+
+    Protected Function MakeParameter(ByVal ParamName As String, ByVal value As Object) As SqlParameter
+        Dim Param As New SqlParameter(ParamName, value)
+        Param.Direction = ParameterDirection.Input
+        Return Param
+    End Function
+    Protected Function MakeParameter(ByVal ParamName As String, ByVal value As Object, ByVal Direction As ParameterDirection) As SqlParameter
+        Dim Param As New SqlParameter(ParamName, value)
+        Param.Direction = Direction
+        Return Param
+    End Function
+    Protected Function CreateCommand(ByVal ProcName As String, ByVal Params As SqlParameter()) As SqlCommand
+        Dim cmd As SqlCommand
+        Dim param As SqlParameter
+
+        Open()
+        cmd = New SqlCommand(ProcName, oSqlConnection)
+        cmd.CommandType = CommandType.StoredProcedure
+        If Not Params Is Nothing Then
+            For Each param In Params
+                cmd.Parameters.Add(param)
+            Next
+        End If
+        If Not oCurrentTransaction Is Nothing Then
+            cmd.Transaction = oCurrentTransaction
+        End If
+        Return cmd
+    End Function
+    Protected Function CreateCommand(ByVal SqlString As String) As SqlCommand
+        Dim cmd As SqlCommand
+        Open()
+        cmd = New SqlCommand(SqlString, oSqlConnection)
+        If Not oCurrentTransaction Is Nothing Then
+            cmd.Transaction = oCurrentTransaction
+        End If
+        Return cmd
+    End Function
+    Protected Sub Open()
+        If oSqlConnection Is Nothing Then
+            oSqlConnection = New SqlConnection(System.Configuration.ConfigurationSettings.AppSettings("DataString"))
+            oSqlConnection.Open()
+            If oTransactionType=TransactionType.RequireTransaction Then oCurrentTransaction = oSqlConnection.BeginTransaction
+            bIsLocalConenction = True
+        Else
+            If oSqlConnection.State = ConnectionState.Closed Or oSqlConnection.State = ConnectionState.Broken Then
+                Throw New Exception("DataBase Conenction is Broken")
+            End If
+            bIsLocalConenction = False
+        End If
+    End Sub
+    Protected Sub Close()
+        If bIsLocalConenction Then
+            If Not oSqlConnection Is Nothing AndAlso (Not oSqlConnection.State = ConnectionState.Broken OrElse oSqlConnection.State = ConnectionState.Closed) Then
+                oSqlConnection.Close()
+                oSqlConnection.Dispose()
+                oSqlConnection = Nothing
+            End If
+        End If
+    End Sub
+    Public Sub Dispose() Implements System.IDisposable.Dispose
+        Close()
+    End Sub
+
+    Public Function ListAll() As DataSet
+        Dim sqlDs As New DataSet
+        RunSqlSt(InternalSqlStr + TableName, sqlDs)
+        Return sqlDs
+    End Function
+    Public Function ListFiltered(ByVal FilterStr As String) As DataSet
+        Dim sqlDs As New DataSet
+        RunSqlSt(InternalSqlStr + TableName + " Where " + FilterStr, sqlDs)
+        Return sqlDs
+    End Function
+    Public Function ListDataReaderAll() As SqlDataReader
+        Dim sqlDs As SqlDataReader
+        RunSqlSt(InternalSqlStr + TableName, sqlDs)
+        Return sqlDs
+    End Function
+    Public Function ListDataReaderFiltered(ByVal FilterStr As String) As SqlDataReader
+        Dim sqlDs As SqlDataReader
+        RunSqlSt(InternalSqlStr + TableName + " Where " + FilterStr, sqlDs)
+        Return sqlDs
+    End Function
+
+
+    Public Class DatabaseUtility
+        '''<summary>
+        '''Validate if the current passed object is a valid date ( lager than 1753)
+        '''</summary>
+        Public Shared Function IsvalidDate(ByVal obj As Object) As Boolean
+            Dim tmpdate As Date = CDate(obj)
+            If tmpdate.Year > 1753 Then Return True
+            Return False
+        End Function
+        '''<summary>
+        '''Validate if the current passed object is a valid Number
+        '''</summary>
+        Public Shared Function IsNumber(ByVal obj As Object) As Boolean
+            If obj.ToString.IndexOf("-") >= 0 Then Return False
+            Return True
+        End Function
+        '''<summary>
+        '''Validate if the current passed object is a null database value , returned value is new date object 
+        '''</summary>
+        Public Shared Function DBNullToDate(ByVal obj As Object) As Date
+            If IsDBNull(obj) Then Return New Date
+            Return CDate(obj)
+        End Function
+        '''<summary>
+        '''Validate if the current passed object is a null database value , returend value is an empty string
+        '''</summary>
+        Public Shared Function DBNullToString(ByVal obj As Object) As String
+            If IsDBNull(obj) Then Return String.Empty
+            Return CStr(obj)
+        End Function
+        '''<summary>
+        '''Check if the string is empty the return value would be a database null value
+        '''</summary>
+        Public Shared Function StringToDBNull(ByVal obj As String) As Object
+            If obj = String.Empty Then Return DBNull.Value
+            Return obj
+        End Function
+        '''<summary>
+        '''Check if the date is empty the return value would be a database null value
+        '''</summary>
+        Public Shared Function DateToDBNull(ByVal obj As Date) As Object
+            If obj.Year < 1753 Then Return DBNull.Value
+            Return obj
+        End Function
+        '''<summary>
+        '''Check if the Number is 0 the return value would be a database null value
+        '''</summary>
+        Public Shared Function IntegerToDBNull(ByVal obj As Int64) As Object
+            If obj = 0 Then Return DBNull.Value
+            Return obj
+        End Function
+        '''<summary>
+        '''Check if the passed object is database null value then return 0
+        '''</summary>
+        Public Shared Function DBNullToInteger(ByVal obj As Object) As Int64
+            If IsDBNull(obj) Then Return 0
+            Return CInt(obj)
+        End Function
+        '''<summary>
+        '''Check if the the passed date is a valid date and return a string otherwise return an empty string
+        '''</summary>
+        Public Shared Function IsDate(ByVal obj As Object) As String
+            Dim tmpdate As Date = CDate(obj)
+            If tmpdate.Year > 1753 Then Return tmpdate.ToShortDateString
+            Return ""
+        End Function
+    End Class
+End Class

@@ -1,0 +1,9 @@
+Public Property [Name] as () [Type]
+	Get
+		Return [PVariable]
+	End Get
+	Set (Value as [Type])
+		[PVariable]=value
+	End Set
+End Property
+

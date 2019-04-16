@@ -1,0 +1,11 @@
+obj\Debug\DALGenerator.exe
+obj\Debug\DALGenerator.pdb
+bin\DALGenerator.exe
+bin\DALGenerator.pdb
+bin\DALGenerator.xml
+obj\Debug\ResolveAssemblyReference.cache
+obj\Debug\DALGenerator.TextFile1.txt
+obj\Debug\DALGenerator.Form1.resources
+obj\Debug\DALGenerator.Splash.resources
+obj\Debug\DALGenerator.vbproj.GenerateResource.Cache
+obj\Debug\DALGenerator.xml
